@@ -31,9 +31,98 @@ const parseRelativeTime = (filterValue) => {
 };
 
 /**
+ * Fetch comments for a specific issue
+ * @param {string} issueKey The issue key
+ * @param {Date|null} cutoffDate Filter cutoff date
+ * @returns {Promise<Array>} Comments
+ */
+const fetchIssueComments = async (issueKey, cutoffDate) => {
+  try {
+    const res = await api
+      .asUser()
+      .requestJira(route`/rest/api/3/issue/${issueKey}/comment`);
+
+    if (!res.ok) {
+      console.error(`Error fetching comments for ${issueKey}:`, res.status);
+      return [];
+    }
+
+    const json = await res.json();
+    const allComments = json.comments || [];
+
+    return allComments
+      .filter((comment) => {
+        if (!cutoffDate) return true;
+        const commentDate = new Date(comment.created);
+        return commentDate >= cutoffDate;
+      })
+      .map((comment) => ({
+        issueKey,
+        type: "comment",
+        author: comment.author?.displayName || "Unknown",
+        content:
+          comment.body?.content?.[0]?.content?.[0]?.text ||
+          comment.body ||
+          "Comment content unavailable",
+        created: new Date(comment.created).toISOString(),
+        updated: comment.updated
+          ? new Date(comment.updated).toISOString()
+          : null,
+        id: comment.id,
+      }));
+  } catch (e) {
+    console.error(`Error fetching comments for ${issueKey}:`, e);
+    return [];
+  }
+};
+
+/**
+ * Fetch attachments for a specific issue
+ * @param {string} issueKey The issue key
+ * @param {Date|null} cutoffDate Filter cutoff date
+ * @returns {Promise<Array>} Attachments
+ */
+const fetchIssueAttachments = async (issueKey, cutoffDate) => {
+  try {
+    const res = await api
+      .asUser()
+      .requestJira(route`/rest/api/3/issue/${issueKey}?fields=attachment`);
+
+    if (!res.ok) {
+      console.error(`Error fetching attachments for ${issueKey}:`, res.status);
+      return [];
+    }
+
+    const json = await res.json();
+    const allAttachments = json.fields?.attachment || [];
+
+    return allAttachments
+      .filter((attachment) => {
+        if (!cutoffDate) return true;
+        const attachmentDate = new Date(attachment.created);
+        return attachmentDate >= cutoffDate;
+      })
+      .map((attachment) => ({
+        issueKey,
+        type: "attachment",
+        author: attachment.author?.displayName || "Unknown",
+        filename: attachment.filename,
+        size: attachment.size,
+        mimeType: attachment.mimeType,
+        created: new Date(attachment.created).toISOString(),
+        id: attachment.id,
+        content: attachment.content,
+      }));
+  } catch (e) {
+    console.error(`Error fetching attachments for ${issueKey}:`, e);
+    return [];
+  }
+};
+
+/**
  * Fetches and filters Jira issue changelog entries by a relative date filter.
  * @param {object} req The incoming request containing issueKey and filter.
- * @returns {Promise<Array>} Filtered changelog entry objects.
+ * @returns {Promise<object>} Object containing changelog, comments, and attachments.
  */
 const devSuvitha = async (req) => {
   try {
@@ -42,13 +131,16 @@ const devSuvitha = async (req) => {
     const rawFilter = req.filter || req.payload?.filter || "all";
 
     // Properly extract value for filtering
-    const filterValue = typeof rawFilter === "string"
-      ? rawFilter
-      : (rawFilter?.value || "all");
+    const filterValue =
+      typeof rawFilter === "string" ? rawFilter : rawFilter?.value || "all";
 
     console.log("Filter received:", rawFilter);
     console.log("Using filter value for parsing:", filterValue);
     console.log("Issue key:", issueKey);
+
+    // Determine the cutoff date to filter entries
+    const cutoffDate = parseRelativeTime(filterValue);
+    console.log("Cutoff date:", cutoffDate);
 
     // Fetch issue with changelog expanded
     const res = await api
@@ -58,30 +150,29 @@ const devSuvitha = async (req) => {
     if (!res.ok) {
       const errorText = await res.text();
       console.error("Jira API error:", res.status, errorText);
-      return [];
+      return {
+        changelog: [],
+        comments: [],
+        attachments: [],
+        total: 0,
+      };
     }
 
     const json = await res.json();
     const allChanges = json.changelog?.histories || [];
     console.log("Total changelog entries:", allChanges.length);
 
-    // Determine the cutoff date to filter changelog entries
-    const cutoffDate = parseRelativeTime(filterValue);
-    console.log("Cutoff date:", cutoffDate);
-
-    // Filter changelog entries by cutoff date, or include all if cutoffDate is null
+    // Filter changelog entries by cutoff date
     const changelogEntries = allChanges
       .filter((entry) => {
         if (!cutoffDate) return true;
         const entryDate = new Date(entry.created);
-        const isIncluded = entryDate >= cutoffDate;
-        // Uncomment for detailed trace:
-        // console.log(`Entry ${entry.created}: ${isIncluded ? "INCLUDED" : "FILTERED OUT"}`);
-        return isIncluded;
+        return entryDate >= cutoffDate;
       })
-      // Flatten mapped items for each changelog entry to get meaningful change logs
       .flatMap((entry) =>
         entry.items.map((item) => ({
+          issueKey,
+          type: "changelog",
           author: entry.author?.displayName || "Unknown",
           field: item.field,
           from: item.fromString || "-",
@@ -90,12 +181,37 @@ const devSuvitha = async (req) => {
         }))
       );
 
-    console.log("Filtered entries count:", changelogEntries.length);
+    // Fetch comments for the issue
+    const comments = await fetchIssueComments(issueKey, cutoffDate);
+    console.log("Comments found:", comments.length);
 
-    return changelogEntries;
+    // Fetch attachments for the issue
+    const attachments = await fetchIssueAttachments(issueKey, cutoffDate);
+    console.log("Attachments found:", attachments.length);
+
+    const result = {
+      changelog: changelogEntries,
+      comments: comments,
+      attachments: attachments,
+      total: changelogEntries.length + comments.length + attachments.length,
+    };
+
+    console.log("Result summary:", {
+      changelogCount: changelogEntries.length,
+      commentsCount: comments.length,
+      attachmentsCount: attachments.length,
+      total: result.total,
+    });
+
+    return result;
   } catch (e) {
     console.error("Error fetching changelog:", e);
-    return [];
+    return {
+      changelog: [],
+      comments: [],
+      attachments: [],
+      total: 0,
+    };
   }
 };
 

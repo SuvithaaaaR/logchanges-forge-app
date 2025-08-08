@@ -136,7 +136,18 @@ const App = () => {
           filter: filter,
           issueKey: "KC-24", // Pass issueKey as well
         });
-        setData(result || []);
+        
+        // Handle new data structure with changelog, comments, and attachments
+        if (result && typeof result === 'object') {
+          const allActivities = [
+            ...(result.changelog || []),
+            ...(result.comments || []),
+            ...(result.attachments || [])
+          ];
+          setData(allActivities);
+        } else {
+          setData(result || []);
+        }
       } catch (error) {
         console.error("Error fetching data:", error);
         setData([]);
@@ -147,7 +158,7 @@ const App = () => {
   }, [filter]);
 
   const sortedData = [...data].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
+    (a, b) => new Date(b.date || b.created) - new Date(a.date || a.created)
   );
 
   return (
@@ -179,8 +190,9 @@ const App = () => {
 
       {/* Table Header */}
       <Inline alignBlock="start" xcss={rowStyle}>
+        <HeaderCell cellStyle={cellStyle}>Type</HeaderCell>
         <HeaderCell cellStyle={cellStyle}>Author</HeaderCell>
-        <HeaderCell cellStyle={cellStyle}>Field</HeaderCell>
+        <HeaderCell cellStyle={cellStyle}>Field/Content</HeaderCell>
         <HeaderCell cellStyle={cellStyle}>From</HeaderCell>
         <HeaderCell cellStyle={cellStyle}>To</HeaderCell>
         <HeaderCell cellStyle={cellStyle}>Date</HeaderCell>
@@ -188,24 +200,44 @@ const App = () => {
 
       {/* Table Rows */}
       {sortedData.length === 0 ? (
-        <Text>No changelog entries found.</Text>
+        <Text>No activities found.</Text>
       ) : (
         sortedData.map((entry, index) => (
           <Inline alignBlock="start" key={index} xcss={rowStyle}>
+            <DataCell cellStyle={cellStyle}>
+              {entry.type === 'changelog' && '📝 Change'}
+              {entry.type === 'comment' && '💬 Comment'}
+              {entry.type === 'attachment' && '📎 Attachment'}
+            </DataCell>
             <DataCell cellStyle={cellStyle}>{entry.author || "-"}</DataCell>
             <DataCell cellStyle={cellStyle}>
-              {entry.field === "status" ? "🚦 " : ""}
-              {entry.field === "priority" ? "⚠️ " : ""}
-              {entry.field === "assignee" ? "👤 " : ""}
-              {entry.field || "-"}
+              {entry.type === 'changelog' && (
+                <>
+                  {entry.field === "status" ? "🚦 " : ""}
+                  {entry.field === "priority" ? "⚠️ " : ""}
+                  {entry.field === "assignee" ? "👤 " : ""}
+                  {entry.field || "-"}
+                </>
+              )}
+              {entry.type === 'comment' && (
+                <Text>{entry.content?.substring(0, 50)}...</Text>
+              )}
+              {entry.type === 'attachment' && (
+                <Text>{entry.filename}</Text>
+              )}
             </DataCell>
-            <DataCell cellStyle={cellStyle}>{entry.from || "-"}</DataCell>
-            <DataCell cellStyle={cellStyle}>{entry.to || "-"}</DataCell>
+            <DataCell cellStyle={cellStyle}>
+              {entry.type === 'changelog' ? (entry.from || "-") : "-"}
+            </DataCell>
+            <DataCell cellStyle={cellStyle}>
+              {entry.type === 'changelog' ? (entry.to || "-") : 
+               entry.type === 'attachment' ? `${Math.round(entry.size / 1024)}KB` : "-"}
+            </DataCell>
             <DataCell cellStyle={cellStyle}>
               <Text>
-                {formatDate(entry.date, userTimeZone)}{" "}
+                {formatDate(entry.date || entry.created, userTimeZone)}{" "}
                 <Text as="span" size="small" tone="subtle">
-                  ({getRelativeTime(entry.date)})
+                  ({getRelativeTime(entry.date || entry.created)})
                 </Text>
               </Text>
             </DataCell>
