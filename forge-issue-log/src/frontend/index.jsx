@@ -85,16 +85,19 @@ const getRelativeTime = (date) => {
     const months = Math.floor(days / 30);
     const years = Math.floor(months / 12);
 
-    let result = "";
-    if (seconds < 60) result = "just now";
-    else if (minutes < 60)
-      result = `${minutes} minute${minutes !== 1 ? "s" : ""}`;
-    else if (hours < 24) result = `${hours} hour${hours !== 1 ? "s" : ""}`;
-    else if (days < 30) result = `${days} day${days !== 1 ? "s" : ""}`;
-    else if (months < 12) result = `${months} month${months !== 1 ? "s" : ""}`;
-    else result = `${years} year${years !== 1 ? "s" : ""}`;
-
-    return `${result} ago`;
+    if (seconds < 60) {
+      return "just now";
+    } else if (minutes < 60) {
+      return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
+    } else if (hours < 24) {
+      return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
+    } else if (days < 30) {
+      return `${days} day${days !== 1 ? "s" : ""} ago`;
+    } else if (months < 12) {
+      return `${months} month${months !== 1 ? "s" : ""} ago`;
+    } else {
+      return `${years} year${years !== 1 ? "s" : ""} ago`;
+    }
   } catch {
     return "";
   }
@@ -136,13 +139,13 @@ const App = () => {
           filter: filter,
           issueKey: "KC-24", // Pass issueKey as well
         });
-        
+
         // Handle new data structure with changelog, comments, and attachments
-        if (result && typeof result === 'object') {
+        if (result && typeof result === "object") {
           const allActivities = [
             ...(result.changelog || []),
             ...(result.comments || []),
-            ...(result.attachments || [])
+            ...(result.attachments || []),
           ];
           setData(allActivities);
         } else {
@@ -205,13 +208,13 @@ const App = () => {
         sortedData.map((entry, index) => (
           <Inline alignBlock="start" key={index} xcss={rowStyle}>
             <DataCell cellStyle={cellStyle}>
-              {entry.type === 'changelog' && '📝 Change'}
-              {entry.type === 'comment' && '💬 Comment'}
-              {entry.type === 'attachment' && '📎 Attachment'}
+              {entry.type === "changelog" && "📝 Change"}
+              {entry.type === "comment" && "💬 Comment"}
+              {entry.type === "attachment" && "📎 Attachment"}
             </DataCell>
             <DataCell cellStyle={cellStyle}>{entry.author || "-"}</DataCell>
             <DataCell cellStyle={cellStyle}>
-              {entry.type === 'changelog' && (
+              {entry.type === "changelog" && (
                 <>
                   {entry.field === "status" ? "🚦 " : ""}
                   {entry.field === "priority" ? "⚠️ " : ""}
@@ -219,19 +222,20 @@ const App = () => {
                   {entry.field || "-"}
                 </>
               )}
-              {entry.type === 'comment' && (
+              {entry.type === "comment" && (
                 <Text>{entry.content?.substring(0, 50)}...</Text>
               )}
-              {entry.type === 'attachment' && (
-                <Text>{entry.filename}</Text>
-              )}
+              {entry.type === "attachment" && <Text>{entry.filename}</Text>}
             </DataCell>
             <DataCell cellStyle={cellStyle}>
-              {entry.type === 'changelog' ? (entry.from || "-") : "-"}
+              {entry.type === "changelog" ? entry.from || "-" : "-"}
             </DataCell>
             <DataCell cellStyle={cellStyle}>
-              {entry.type === 'changelog' ? (entry.to || "-") : 
-               entry.type === 'attachment' ? `${Math.round(entry.size / 1024)}KB` : "-"}
+              {entry.type === "changelog"
+                ? entry.to || "-"
+                : entry.type === "attachment"
+                ? `${Math.round(entry.size / 1024)}KB`
+                : "-"}
             </DataCell>
             <DataCell cellStyle={cellStyle}>
               <Text>
