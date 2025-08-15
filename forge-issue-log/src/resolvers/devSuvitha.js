@@ -121,88 +121,83 @@ const fetchIssueAttachments = async (issueKey, cutoffDate) => {
 
 /**
  * Fetches and filters Jira issue changelog entries by a relative date filter.
- * @param {object} req The incoming request containing issueKey and filter.
- * @returns {Promise<object>} Object containing changelog, comments, and attachments.
+ * @param {object} req The incoming request containing issueKey(s) and filter.
+ * @returns {Promise<object>} Object containing changelog, comments, and attachments for all keys.
  */
 const devSuvitha = async (req) => {
   try {
-    // Extract parameters with fallback defaults
-    const issueKey = req.issueKey || req.payload?.issueKey || "KC-24";
+    // Use context extension issue key if available
+    let issueKeys = req.issueKeys || req.payload?.issueKeys;
+    let contextKey = req?.context?.extension?.issue?.key;
+    if (!issueKeys) {
+      // fallback to context key, then single key logic
+      if (contextKey) {
+        console.log("Context issue key:", contextKey);
+        issueKeys = [contextKey];
+      } else {
+        const singleKey = req.issueKey || req.payload?.issueKey || "KC-24";
+        issueKeys = [singleKey];
+      }
+    }
     const rawFilter = req.filter || req.payload?.filter || "all";
-
-    // Properly extract value for filtering
     const filterValue =
       typeof rawFilter === "string" ? rawFilter : rawFilter?.value || "all";
-
-    console.log("Filter received:", rawFilter);
-    console.log("Using filter value for parsing:", filterValue);
-    console.log("Issue key:", issueKey);
-
-    // Determine the cutoff date to filter entries
     const cutoffDate = parseRelativeTime(filterValue);
-    console.log("Cutoff date:", cutoffDate);
 
-    // Fetch issue with changelog expanded
-    const res = await api
-      .asUser()
-      .requestJira(route`/rest/api/3/issue/${issueKey}?expand=changelog`);
+    let allChangelog = [];
+    let allComments = [];
+    let allAttachments = [];
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error("Jira API error:", res.status, errorText);
-      return {
-        changelog: [],
-        comments: [],
-        attachments: [],
-        total: 0,
-      };
+    for (const issueKey of issueKeys) {
+      // Fetch issue with changelog expanded
+      const res = await api
+        .asUser()
+        .requestJira(route`/rest/api/3/issue/${issueKey}?expand=changelog`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Jira API error:", res.status, errorText);
+        continue;
+      }
+      const json = await res.json();
+      const allChanges = json.changelog?.histories || [];
+      // Filter changelog entries by cutoff date
+      const changelogEntries = allChanges
+        .filter((entry) => {
+          if (!cutoffDate) return true;
+          const entryDate = new Date(entry.created);
+          return entryDate >= cutoffDate;
+        })
+        .flatMap((entry) =>
+          entry.items.map((item) => ({
+            issueKey,
+            type: "changelog",
+            author: entry.author?.displayName || "Unknown",
+            field: item.field,
+            from: item.fromString || "-",
+            to: item.toString || "-",
+            date: new Date(entry.created).toISOString(),
+          }))
+        );
+      // Fetch comments and attachments
+      const comments = await fetchIssueComments(issueKey, cutoffDate);
+      const attachments = await fetchIssueAttachments(issueKey, cutoffDate);
+      allChangelog.push(...changelogEntries);
+      allComments.push(...comments);
+      allAttachments.push(...attachments);
     }
 
-    const json = await res.json();
-    const allChanges = json.changelog?.histories || [];
-    console.log("Total changelog entries:", allChanges.length);
-
-    // Filter changelog entries by cutoff date
-    const changelogEntries = allChanges
-      .filter((entry) => {
-        if (!cutoffDate) return true;
-        const entryDate = new Date(entry.created);
-        return entryDate >= cutoffDate;
-      })
-      .flatMap((entry) =>
-        entry.items.map((item) => ({
-          issueKey,
-          type: "changelog",
-          author: entry.author?.displayName || "Unknown",
-          field: item.field,
-          from: item.fromString || "-",
-          to: item.toString || "-",
-          date: new Date(entry.created).toISOString(),
-        }))
-      );
-
-    // Fetch comments for the issue
-    const comments = await fetchIssueComments(issueKey, cutoffDate);
-    console.log("Comments found:", comments.length);
-
-    // Fetch attachments for the issue
-    const attachments = await fetchIssueAttachments(issueKey, cutoffDate);
-    console.log("Attachments found:", attachments.length);
-
     const result = {
-      changelog: changelogEntries,
-      comments: comments,
-      attachments: attachments,
-      total: changelogEntries.length + comments.length + attachments.length,
+      changelog: allChangelog,
+      comments: allComments,
+      attachments: allAttachments,
+      total: allChangelog.length + allComments.length + allAttachments.length,
     };
-
     console.log("Result summary:", {
-      changelogCount: changelogEntries.length,
-      commentsCount: comments.length,
-      attachmentsCount: attachments.length,
+      changelogCount: allChangelog.length,
+      commentsCount: allComments.length,
+      attachmentsCount: allAttachments.length,
       total: result.total,
     });
-
     return result;
   } catch (e) {
     console.error("Error fetching changelog:", e);
