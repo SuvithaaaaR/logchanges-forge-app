@@ -133,14 +133,13 @@ const App = () => {
   const { tableStyle, rowStyle, cellStyle } = useStyles();
 
   useEffect(() => {
+    let intervalId;
     const fetchData = async () => {
       try {
         const result = await invoke(currentDev, {
           filter: filter,
           issueKey: "KC-24", // Pass issueKey as well
         });
-
-        // Handle new data structure with changelog, comments, and attachments
         if (result && typeof result === "object") {
           const allActivities = [
             ...(result.changelog || []),
@@ -156,8 +155,9 @@ const App = () => {
         setData([]);
       }
     };
-
     fetchData();
+    intervalId = setInterval(fetchData, 10000); // Poll every 10 seconds
+    return () => clearInterval(intervalId);
   }, [filter]);
 
   const sortedData = [...data].sort(
