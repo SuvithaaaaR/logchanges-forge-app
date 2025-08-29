@@ -127,18 +127,32 @@ const exportCSV = (data, timeZone) => {
 
 // 📍 Main App
 const App = () => {
-  const [filter, setFilter] = useState("all");
+  const filterOptions = [
+    { label: "All Time", value: "all" },
+    { label: "Last 24 hours", value: "24h" },
+    { label: "Last 7 days", value: "7d" },
+    { label: "Last 30 days", value: "30d" },
+    { label: "Last 6 months", value: "6m" },
+    { label: "Last 1 year", value: "1y" },
+  ];
+  const [filter, setFilter] = useState(filterOptions[0]);
   const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [logsPerPage, setLogsPerPage] = useState(25);
+  const [page, setPage] = useState(1);
   const userTimeZone = useUserTimeZone();
   const { tableStyle, rowStyle, cellStyle } = useStyles();
 
   useEffect(() => {
     let intervalId;
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const result = await invoke(currentDev, {
-          filter: filter,
-          issueKey: "KC-24", // Pass issueKey as well
+          filter: filter.value,
+          issueKey: "KC-24",
         });
         if (result && typeof result === "object") {
           const allActivities = [
@@ -151,17 +165,29 @@ const App = () => {
           setData(result || []);
         }
       } catch (error) {
-        console.error("Error fetching data:", error);
+        setError(error.message || "Unknown error");
         setData([]);
+      } finally {
+        setLoading(false);
       }
     };
     fetchData();
-    intervalId = setInterval(fetchData, 10000); // Poll every 10 seconds
+    intervalId = setInterval(fetchData, 10000);
     return () => clearInterval(intervalId);
   }, [filter]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filter, logsPerPage]);
+
   const sortedData = [...data].sort(
     (a, b) => new Date(b.date || b.created) - new Date(a.date || a.created)
+  );
+  const totalPages =
+    sortedData.length > 0 ? Math.ceil(sortedData.length / logsPerPage) : 1;
+  const pagedData = sortedData.slice(
+    (page - 1) * logsPerPage,
+    page * logsPerPage
   );
 
   return (
@@ -171,18 +197,7 @@ const App = () => {
         <Text>
           <Strong>Filter by Time:</Strong>
         </Text>
-        <Select
-          options={[
-            { label: "All Time", value: "all" },
-            { label: "Last 24 hours", value: "24h" },
-            { label: "Last 7 days", value: "7d" },
-            { label: "Last 30 days", value: "30d" },
-            { label: "Last 6 months", value: "6m" },
-            { label: "Last 1 year", value: "1y" },
-          ]}
-          value={filter}
-          onChange={(value) => setFilter(value)}
-        />
+        <Select options={filterOptions} value={filter} onChange={setFilter} />
 
         <Box marginBlockStart="space.100" />
         <Button
@@ -202,10 +217,14 @@ const App = () => {
       </Inline>
 
       {/* Table Rows */}
-      {sortedData.length === 0 ? (
+      {loading ? (
+        <Text>Loading...</Text>
+      ) : error ? (
+        <Text tone="critical">Error: {error}</Text>
+      ) : sortedData.length === 0 ? (
         <Text>No activities found.</Text>
       ) : (
-        sortedData.map((entry, index) => (
+        pagedData.map((entry, index) => (
           <Inline alignBlock="start" key={index} xcss={rowStyle}>
             <DataCell cellStyle={cellStyle}>
               {entry.type === "changelog" && "📝 Change"}
@@ -247,6 +266,46 @@ const App = () => {
             </DataCell>
           </Inline>
         ))
+      )}
+
+      {/* Pagination Controls */}
+      {sortedData.length > 0 && (
+        <Box
+          marginBlockStart="space.200"
+          display="flex"
+          alignItems="center"
+          gap="space.200"
+        >
+          <Text>Logs per page:</Text>
+          <Select
+            options={[10, 25, 50, 100].map((n) => ({
+              label: n.toString(),
+              value: n,
+            }))}
+            value={{ label: logsPerPage.toString(), value: logsPerPage }}
+            onChange={(val) => setLogsPerPage(val.value)}
+            width="80px"
+          />
+          <Box marginInlineStart="space.200" />
+          <Button
+            appearance="subtle"
+            isDisabled={page === 1}
+            onClick={() => setPage(page - 1)}
+          >
+            &lt;
+          </Button>
+          <Button appearance="primary" isDisabled>
+            {page}
+          </Button>
+          <Button
+            appearance="subtle"
+            isDisabled={page === totalPages || totalPages === 0}
+            onClick={() => setPage(page + 1)}
+          >
+            &gt;
+          </Button>
+          <Text style={{ marginLeft: 8, color: "#888" }}>of {totalPages}</Text>
+        </Box>
       )}
     </Box>
   );
