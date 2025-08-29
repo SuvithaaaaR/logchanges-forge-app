@@ -298,7 +298,10 @@ const App = () => {
               value: n,
             }))}
             value={{ label: logsPerPage.toString(), value: logsPerPage }}
-            onChange={(val) => setLogsPerPage(val.value)}
+            onChange={(val) => {
+              setLogsPerPage(val.value);
+              setPage(1);
+            }}
             width="80px"
           />
           <Box marginInlineStart="space.200" />
@@ -309,9 +312,18 @@ const App = () => {
           >
             &lt;
           </Button>
-          <Button appearance="primary" isDisabled>
-            {page}
-          </Button>
+          {/* Page numbers */}
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <Button
+              key={p}
+              appearance={p === page ? "primary" : "subtle"}
+              isDisabled={p === page}
+              onClick={() => setPage(p)}
+              style={{ minWidth: 32 }}
+            >
+              {p}
+            </Button>
+          ))}
           <Button
             appearance="subtle"
             isDisabled={page === totalPages || totalPages === 0}
