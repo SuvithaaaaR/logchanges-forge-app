@@ -160,7 +160,22 @@ const App = () => {
             ...(result.comments || []),
             ...(result.attachments || []),
           ];
-          setData(allActivities);
+          // Remove duplicates based on type+date+field+from+to+filename
+          const seen = new Set();
+          const uniqueActivities = allActivities.filter((item) => {
+            let key = `${item.type}-${item.date || item.created}`;
+            if (item.type === "changelog") {
+              key += `-${item.field || ""}-${item.from || ""}-${item.to || ""}`;
+            } else if (item.type === "attachment") {
+              key += `-${item.filename || ""}`;
+            } else if (item.type === "comment") {
+              key += `-${item.content || ""}`;
+            }
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setData(uniqueActivities);
         } else {
           setData(result || []);
         }
